@@ -1,126 +1,170 @@
-"use client"
+"use client";
 
-import { useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useToast } from "@/components/ui/use-toast"
-import { Icons } from "@/components/ui/icons"
-
-type SubmissionType = "brainstormMap" | "presentationVideo"
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/use-toast";
 
 export function ProjectSubmission() {
-  const [submissionType, setSubmissionType] = useState<SubmissionType>("brainstormMap")
-  const [file, setFile] = useState<File | null>(null)
-  const [youtubeLink, setYoutubeLink] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
+  const [submissionType, setSubmissionType] = useState<"brainstorm map" | "presentation video">("brainstorm map");
+  const [file, setFile] = useState<File | null>(null);
+  const [youtubeLink, setYoutubeLink] = useState("");
+  const [teamName, setTeamName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  // Fetch the logged-in user's team name
+  useEffect(() => {
+    const fetchUserTeam = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        toast({ title: "Error", description: "Could not fetch user data." });
+        return;
+      }
+
+      const { data: teamData, error: teamError } = await supabase
+        .from("teams")
+        .select("teamName")
+        .or(`"teacherEmail".eq.${user.email}, "teamMember1ParentEmail".eq.${user.email}, "teamMember2ParentEmail".eq.${user.email}, "teamMember3ParentEmail".eq.${user.email}`)
+        .single();
+
+      if (teamError) {
+        toast({ title: "Error", description: "Could not find your team." });
+      } else {
+        setTeamName(teamData.teamName);
+      }
+    };
+
+    fetchUserTeam();
+  }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setIsLoading(false)
-    toast({
-      title: "Project Submitted",
-      description: `Your ${submissionType === "brainstormMap" ? "Brainstorm Map" : "Presentation Video"} has been submitted successfully.`,
-    })
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0] || null
-    setFile(selectedFile)
-  }
-
-  const handleYoutubeLinkChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setYoutubeLink(e.target.value)
-  }
-
-  const handleSubmissionTypeChange = (value: SubmissionType) => {
-    setSubmissionType(value)
-    setFile(null)
-    setYoutubeLink("")
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
+    e.preventDefault();
+    if ((submissionType === "brainstorm map" && !file) || (submissionType === "presentation video" && !youtubeLink) || !teamName) {
+      toast({ title: "Error", description: "All fields are required." });
+      return;
     }
-  }
+
+    setLoading(true);
+    let fileUrl = "";
+
+    try {
+      if (submissionType === "brainstorm map" && file) {
+        // ✅ Upload file to Supabase Storage for Brainstorm Map
+        const filePath = `project-submissions/${Date.now()}-${file.name}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("project-submissions")
+          .upload(filePath, file);
+
+        if (uploadError) throw new Error("Failed to upload file.");
+
+        // ✅ Get the public URL of the uploaded file
+        const { data: publicURLData } = supabase.storage
+          .from("project-submissions")
+          .getPublicUrl(filePath);
+
+        fileUrl = publicURLData.publicUrl;
+      } else if (submissionType === "presentation video") {
+        // ✅ Directly save the YouTube link
+        fileUrl = youtubeLink;
+      }
+
+      // ✅ Insert into the submissions table
+      const { error: insertError } = await supabase.from("submissions").insert([
+        {
+          "teamName": teamName,
+          "author": (await supabase.auth.getUser()).data.user?.email,
+          "submission_type": submissionType,
+          "timestamp": new Date().toISOString(),
+          "file_url": fileUrl,
+        }
+      ]);
+
+      if (insertError) throw new Error("Failed to submit project.");
+
+      toast({
+        title: "Submission Successful",
+        description: "Your project has been submitted.",
+      });
+
+      setFile(null);
+      setYoutubeLink("");
+
+      // ✅ Reset File Input
+      const fileInput = document.getElementById("file") as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = "";
+      }
+
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">Submit Your Project</CardTitle>
-        <CardDescription>
-          Upload your brainstorm map or provide a YouTube link for your presentation video
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <RadioGroup value={submissionType} onValueChange={handleSubmissionTypeChange}>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="brainstormMap" id="brainstormMap" />
-              <Label htmlFor="brainstormMap">Brainstorm Map</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="presentationVideo" id="presentationVideo" />
-              <Label htmlFor="presentationVideo">Presentation Video</Label>
-            </div>
-          </RadioGroup>
-          {submissionType === "brainstormMap" ? (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Submit Your Project</CardTitle>
+          <CardDescription>Upload your brainstorm map or submit a YouTube link for your presentation video</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* ✅ Submission Type Dropdown */}
             <div className="space-y-2">
-              <Label htmlFor="brainstormMap">Upload Brainstorm Map</Label>
-              <Input
-                id="brainstormMap"
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                ref={fileInputRef}
+              <Label htmlFor="submissionType">Submission Type</Label>
+              <select
+                id="submissionType"
+                value={submissionType}
+                onChange={(e) => setSubmissionType(e.target.value as "brainstorm map" | "presentation video")}
+                className="w-full p-2 border rounded"
                 required
-              />
+              >
+                <option value="brainstorm map">Brainstorm Map</option>
+                <option value="presentation video">Presentation Video</option>
+              </select>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="youtubeLink">Presentation Video (YouTube Link)</Label>
-              <Input
-                id="youtubeLink"
-                type="url"
-                value={youtubeLink}
-                onChange={handleYoutubeLinkChange}
-                placeholder="https://www.youtube.com/watch?v=..."
-                required
-              />
-            </div>
-          )}
-          <Button
-            type="submit"
-            className="group"
-            disabled={isLoading}
-            onClick={(e) => {
-              if (!isLoading) {
-                const button = e.currentTarget
-                button.classList.add("animate-button-pop")
-                button.addEventListener(
-                  "animationend",
-                  () => {
-                    button.classList.remove("animate-button-pop")
-                  },
-                  { once: true },
-                )
-              }
-            }}
-          >
-            {isLoading ? (
-              <Icons.spinner className="h-4 w-4 animate-spin" />
-            ) : (
-              <span className="inline-block transition-transform group-active:scale-95">Submit</span>
-            )}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  )
-}
 
+            {/* ✅ Show File Upload for Brainstorm Map */}
+            {submissionType === "brainstorm map" && (
+              <div className="space-y-2">
+                <Label htmlFor="file">Upload Brainstorm Map (PDF/Image)</Label>
+                <Input 
+                  id="file" 
+                  type="file" 
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  required
+                />
+              </div>
+            )}
+
+            {/* ✅ Show YouTube Link Input for Presentation Video */}
+            {submissionType === "presentation video" && (
+              <div className="space-y-2">
+                <Label htmlFor="youtubeLink">YouTube Video Link</Label>
+                <Input 
+                  id="youtubeLink" 
+                  type="url" 
+                  placeholder="https://www.youtube.com/watch?v=example"
+                  value={youtubeLink}
+                  onChange={(e) => setYoutubeLink(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            {/* ✅ Submit Button */}
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Submitting..." : "Submit Project"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+  );
+}

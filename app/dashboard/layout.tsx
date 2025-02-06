@@ -1,28 +1,41 @@
-"use client"
+"use client";
 
-import { useState, type ReactNode } from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Home, LogOut, Menu, Package, Bug, ChevronDown, History, FileUp, Lightbulb } from "lucide-react"
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Home, LogOut, Menu, Package, Bug, ChevronDown, History, FileUp, Lightbulb } from "lucide-react";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: ReactNode
-}) {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const router = useRouter()
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null); // Store the authenticated user
 
-  const handleSignOut = () => {
-    // For now, just redirect to sign-in page
-    router.push("/signin")
-  }
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/signin"); // Redirect to sign-in if not logged in
+      } else {
+        setUser(user);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/signin");
+  };
+
+  if (!user) return <div className="flex justify-center items-center h-screen">Loading...</div>;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -34,22 +47,22 @@ export default function DashboardLayout({
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
-          <Sidebar onSignOut={handleSignOut} />
+          <Sidebar user={user} onSignOut={handleSignOut} />
         </SheetContent>
       </Sheet>
       <aside className="hidden w-64 overflow-y-auto border-r bg-gray-100/40 lg:block">
-        <Sidebar onSignOut={handleSignOut} />
+        <Sidebar user={user} onSignOut={handleSignOut} />
       </aside>
       <main className="flex-1 overflow-y-auto">
         <div className="container mx-auto py-6 px-4 lg:px-8 pt-16 lg:pt-6">{children}</div>
       </main>
     </div>
-  )
+  );
 }
 
-function Sidebar({ onSignOut }: { onSignOut: () => void }) {
-  const [bugsOpen, setBugsOpen] = useState(false)
-  const pathname = usePathname()
+function Sidebar({ user, onSignOut }: { user: any; onSignOut: () => void }) {
+  const [bugsOpen, setBugsOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <div className="flex h-full flex-col">
@@ -80,7 +93,7 @@ function Sidebar({ onSignOut }: { onSignOut: () => void }) {
               onClick={() => setBugsOpen(!bugsOpen)}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                bugsOpen ? "bg-gray-200 text-gray-900" : "text-gray-700 hover:bg-gray-200 hover:text-gray-900",
+                bugsOpen ? "bg-gray-200 text-gray-900" : "text-gray-700 hover:bg-gray-200 hover:text-gray-900"
               )}
             >
               <Bug className="h-4 w-4" />
@@ -100,10 +113,10 @@ function Sidebar({ onSignOut }: { onSignOut: () => void }) {
         </nav>
       </ScrollArea>
       <div className="border-t p-4">
-        <UserProfile onSignOut={onSignOut} />
+        <UserProfile user={user} onSignOut={onSignOut} />
       </div>
     </div>
-  )
+  );
 }
 
 function NavItem({
@@ -111,39 +124,48 @@ function NavItem({
   icon: Icon,
   children,
   className,
-}: { href: string; icon?: React.ElementType; children: React.ReactNode; className?: string }) {
-  const pathname = usePathname()
+}: {
+  href: string;
+  icon?: React.ElementType;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const pathname = usePathname();
   return (
     <Link
       href={href}
       className={cn(
         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
         pathname === href ? "bg-gray-200 text-gray-900" : "text-gray-700 hover:bg-gray-200 hover:text-gray-900",
-        className,
+        className
       )}
     >
       {Icon && <Icon className="h-4 w-4" />}
       {children}
     </Link>
-  )
+  );
 }
-
-function UserProfile({ onSignOut }: { onSignOut: () => void }) {
+function UserProfile({ user, onSignOut }: { user: any; onSignOut: () => void }) {
   return (
     <div className="flex items-center gap-3">
       <Avatar>
-        <AvatarImage src="/avatars/01.png" alt="@johndoe" />
-        <AvatarFallback>JD</AvatarFallback>
+        <AvatarImage src="/avatars/01.png" alt={user.email} />
+        <AvatarFallback>{user.email[0].toUpperCase()}</AvatarFallback>
       </Avatar>
-      <div className="flex flex-col">
-        <span className="text-sm font-medium">John Doe</span>
-        <span className="text-xs text-gray-500">john@example.com</span>
+      <div className="flex flex-col w-[120px] overflow-hidden">
+        <span
+          className="text-sm font-medium truncate max-w-[120px] block"
+          title={user.email}  // ✅ Full email shown on hover
+        >
+          {user.email}
+        </span>
+        <span className="text-xs text-gray-500">Signed in</span>
       </div>
       <Button variant="ghost" size="icon" className="ml-auto" onClick={onSignOut}>
         <LogOut className="h-4 w-4" />
         <span className="sr-only">Sign out</span>
       </Button>
     </div>
-  )
+  );
 }
 

@@ -1,80 +1,122 @@
-import Link from "next/link"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+"use client";
 
-type BugSubmission = {
-  id: number
-  bugNumber: number
-  submittedBy: string
-  submissionDate: string
-  status: "latest" | "overwritten"
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { format } from "date-fns";
+
+interface BugSubmission {
+  id: string;
+  teamName: string;
+  author: string;
+  bug_number: number;
+  description: string;
+  timestamp: string;
+  screenshot_url: string;
 }
-
-const bugSubmissions: BugSubmission[] = [
-  { id: 1, bugNumber: 1, submittedBy: "Alice Johnson", submissionDate: "2023-06-15T14:30:00Z", status: "latest" },
-  { id: 2, bugNumber: 2, submittedBy: "Bob Smith", submissionDate: "2023-06-16T09:45:00Z", status: "overwritten" },
-  { id: 3, bugNumber: 1, submittedBy: "Charlie Brown", submissionDate: "2023-06-17T11:20:00Z", status: "overwritten" },
-  { id: 4, bugNumber: 3, submittedBy: "Diana Prince", submissionDate: "2023-06-18T16:55:00Z", status: "latest" },
-  { id: 5, bugNumber: 2, submittedBy: "Ethan Hunt", submissionDate: "2023-06-19T08:10:00Z", status: "latest" },
-]
-
-const colorSchemes = {
-  blueGray: {
-    latest: "bg-blue-500 hover:bg-blue-600 text-white",
-    overwritten: "bg-gray-300 hover:bg-gray-400 text-gray-800",
-  },
-}
-
-const activeColorScheme = colorSchemes.blueGray
 
 export function BugSubmissionHistory() {
-  return (
-    <Table>
-      <TableCaption>A list of recent bug fix submissions</TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Bug #</TableHead>
-          <TableHead>Submitted By</TableHead>
-          <TableHead>Submission Date & Time</TableHead>
-          <TableHead>Status</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {bugSubmissions.map((submission) => {
-          const submissionDate = new Date(submission.submissionDate)
-          return (
-            <TableRow key={submission.id} className="cursor-pointer hover:bg-gray-100">
-              <TableCell>
-                <Link href={`/dashboard/bugs/${submission.bugNumber}`} className="block w-full">
-                  Bug #{submission.bugNumber}
-                </Link>
-              </TableCell>
-              <TableCell>
-                <Link href={`/dashboard/bugs/${submission.bugNumber}`} className="block w-full">
-                  {submission.submittedBy}
-                </Link>
-              </TableCell>
-              <TableCell>
-                <Link href={`/dashboard/bugs/${submission.bugNumber}`} className="block w-full">
-                  {submissionDate.toLocaleDateString()} {submissionDate.toLocaleTimeString()}
-                </Link>
-              </TableCell>
-              <TableCell>
-                <Link href={`/dashboard/bugs/${submission.bugNumber}`} className="block w-full">
-                  <Badge
-                    className={
-                      submission.status === "latest" ? activeColorScheme.latest : activeColorScheme.overwritten
-                    }
-                  >
-                    {submission.status === "latest" ? "Latest" : "Overwritten"}
-                  </Badge>
-                </Link>
-              </TableCell>
-            </TableRow>
-          )
-        })}
-      </TableBody>
-    </Table>
-  )
-}
+  const [submissions, setSubmissions] = useState<BugSubmission[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedBug, setSelectedBug] = useState<BugSubmission | null>(null);
+  const [teamName, setTeamName] = useState<string | null>(null);
 
+  useEffect(() => {
+    const fetchUserTeam = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        console.error("Could not fetch user data:", error);
+        return;
+      }
+
+      // ✅ Fetch the logged-in user's team
+      const { data: teamData, error: teamError } = await supabase
+        .from("teams")
+        .select("teamName")
+        .or(`"teacherEmail".eq.${user.email}, "teamMember1ParentEmail".eq.${user.email}, "teamMember2ParentEmail".eq.${user.email}, "teamMember3ParentEmail".eq.${user.email}`)
+        .single();
+
+      if (teamError) {
+        console.error("Could not find the user's team:", teamError);
+      } else {
+        setTeamName(teamData.teamName);
+        fetchSubmissions(teamData.teamName); // Fetch bugs only for this team
+      }
+    };
+
+    fetchUserTeam();
+  }, []);
+
+  const fetchSubmissions = async (userTeam: string) => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("bugs")
+      .select("id, teamName, author, bug_number, description, timestamp, screenshot_url")
+      .eq("teamName", userTeam) // ✅ Only fetch bugs from the user's team
+      .order("timestamp", { ascending: false });
+
+    if (error) console.error("Error fetching submissions:", error);
+    else setSubmissions(data || []);
+
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      {loading ? (
+        <p className="text-gray-500">Loading bug submissions...</p>
+      ) : submissions.length === 0 ? (
+        <p className="text-gray-500">No bug submissions for your team yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Bug #</TableHead>
+                <TableHead>Team</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {submissions.map((submission) => (
+                <TableRow key={submission.id}>
+                  <TableCell>#{submission.bug_number}</TableCell>
+                  <TableCell>{submission.teamName}</TableCell>
+                  <TableCell>{submission.author}</TableCell>
+                  <TableCell>{format(new Date(submission.timestamp), "PPpp")}</TableCell>
+                  <TableCell>
+                    <Button size="sm" onClick={() => setSelectedBug(submission)}>View Details</Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* ✅ Dialog for Bug Details */}
+      <Dialog open={!!selectedBug} onOpenChange={() => setSelectedBug(null)}>
+        {selectedBug && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Bug #{selectedBug.bug_number} Details</DialogTitle>
+            </DialogHeader>
+            <p><strong>Team:</strong> {selectedBug.teamName}</p>
+            <p><strong>Author:</strong> {selectedBug.author}</p>
+            <p><strong>Date:</strong> {format(new Date(selectedBug.timestamp), "PPpp")}</p>
+            <p className="mt-2">{selectedBug.description}</p>
+            {selectedBug.screenshot_url && (
+              <a href={selectedBug.screenshot_url} target="_blank" rel="noopener noreferrer">
+                <img src={selectedBug.screenshot_url} alt="Screenshot" className="mt-2 rounded-lg w-full h-48 object-cover" />
+              </a>
+            )}
+          </DialogContent>
+        )}
+      </Dialog>
+    </div>
+  );
+}

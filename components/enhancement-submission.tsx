@@ -1,120 +1,157 @@
-"use client"
+"use client";
 
-import { useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input, Textarea } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { useToast } from "@/components/ui/use-toast"
-import { Icons } from "@/components/ui/icons"
-
-type EnhancementType = "advanced" | "basic"
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/components/ui/use-toast";
+import Image from "next/image";
 
 export function EnhancementSubmission() {
-  const [enhancementType, setEnhancementType] = useState<EnhancementType>("basic")
-  const [screenshot, setScreenshot] = useState<File | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [description, setDescription] = useState("")
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const { toast } = useToast()
+  const [screenshot, setScreenshot] = useState<File | null>(null);
+  const [method, setMethod] = useState("");
+  const [enhancementType, setEnhancementType] = useState<"basic" | "advanced">("basic");
+  const [teamName, setTeamName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  // Fetch the logged-in user's team name
+  useEffect(() => {
+    const fetchUserTeam = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        toast({ title: "Error", description: "Could not fetch user data." });
+        return;
+      }
+
+      // Query the teams table to get the teamName for either the teacher or students
+      const { data: teamData, error: teamError } = await supabase
+        .from("teams")
+        .select("teamName")
+        .or(`"teacherEmail".eq.${user.email}, "teamMember1ParentEmail".eq.${user.email}, "teamMember2ParentEmail".eq.${user.email}, "teamMember3ParentEmail".eq.${user.email}`)
+        .single();
+
+      if (teamError) {
+        toast({ title: "Error", description: "Could not find your team." });
+      } else {
+        setTeamName(teamData.teamName);
+      }
+    };
+
+    fetchUserTeam();
+  }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setIsLoading(false)
-    toast({
-      title: "Enhancement Submitted",
-      description: `Your ${enhancementType} enhancement "${description}" has been submitted successfully.`,
-    })
-  }
-
-  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0] || null
-    setScreenshot(selectedFile)
-  }
-
-  const handleEnhancementTypeChange = (value: EnhancementType) => {
-    setEnhancementType(value)
-    setScreenshot(null)
-    setDescription("")
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
+    e.preventDefault();
+    if (!screenshot || !method || !teamName) {
+      toast({ title: "Error", description: "All fields are required." });
+      return;
     }
-  }
 
-  const handleDescriptionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDescription(e.target.value)
-  }
+    setLoading(true);
+
+    try {
+      // Upload the screenshot to Supabase Storage
+      const filePath = `enhancement-screenshots/${Date.now()}-${screenshot.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("enhancement-screenshots")
+        .upload(filePath, screenshot);
+
+      if (uploadError) throw new Error("Failed to upload screenshot.");
+
+      // Get the public URL of the uploaded image
+      const { data: publicURLData } = supabase.storage
+        .from("enhancement-screenshots")
+        .getPublicUrl(filePath);
+
+      const screenshotUrl = publicURLData.publicUrl;
+
+      // Insert into the enhancements table
+      const { error: insertError } = await supabase.from("enhancements").insert([
+        {
+          "teamName": teamName,
+          "author": (await supabase.auth.getUser()).data.user?.email,
+          "enhancement_type": enhancementType,
+          "description": method,
+          "timestamp": new Date().toISOString(),
+          "screenshot_url": screenshotUrl,
+        }
+      ]);
+
+      if (insertError) throw new Error("Failed to submit enhancement.");
+
+      // ✅ Show Success Toast
+      toast({
+        title: "Submission Successful",
+        description: "Your enhancement has been submitted for review.",
+      });
+
+      // ✅ Reset Form Fields
+      setScreenshot(null);
+      setMethod("");
+
+      // ✅ Reset File Input
+      const fileInput = document.getElementById("screenshot") as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = "";
+      }
+
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl font-semibold">Submit Enhancement</CardTitle>
-        <CardDescription>Choose the enhancement type and upload a screenshot of your code</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <RadioGroup value={enhancementType} onValueChange={handleEnhancementTypeChange}>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="basic" id="basic" />
-              <Label htmlFor="basic">Basic</Label>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl font-semibold">Submit Your Enhancement</CardTitle>
+          <CardDescription>Upload your code and describe your method</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="enhancementType">Enhancement Type</Label>
+              <select
+                id="enhancementType"
+                value={enhancementType}
+                onChange={(e) => setEnhancementType(e.target.value as "basic" | "advanced")}
+                className="w-full p-2 border rounded"
+                required
+              >
+                <option value="basic">Basic</option>
+                <option value="advanced">Advanced</option>
+              </select>
             </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="advanced" id="advanced" />
-              <Label htmlFor="advanced">Advanced</Label>
+            <div className="space-y-2">
+              <Label htmlFor="screenshot">Code Screenshot</Label>
+              <Input 
+                id="screenshot" 
+                type="file" 
+                accept="image/*"
+                onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
+                required
+              />
             </div>
-          </RadioGroup>
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={handleDescriptionChange}
-              placeholder="Describe your enhancement..."
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="screenshot">Code Screenshot</Label>
-            <Input
-              id="screenshot"
-              type="file"
-              accept="image/*"
-              onChange={handleScreenshotChange}
-              ref={fileInputRef}
-              required
-            />
-          </div>
-          <Button
-            type="submit"
-            className="group"
-            disabled={isLoading}
-            onClick={(e) => {
-              if (!isLoading) {
-                const button = e.currentTarget
-                button.classList.add("animate-button-pop")
-                button.addEventListener(
-                  "animationend",
-                  () => {
-                    button.classList.remove("animate-button-pop")
-                  },
-                  { once: true },
-                )
-              }
-            }}
-          >
-            {isLoading ? (
-              <Icons.spinner className="h-4 w-4 animate-spin" />
-            ) : (
-              <span className="inline-block transition-transform group-active:scale-95">Submit Enhancement</span>
-            )}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-  )
+            <div className="space-y-2">
+              <Label htmlFor="method">Fix Method Description</Label>
+              <Textarea 
+                id="method"
+                placeholder="Describe your enhancement..."
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Submitting..." : "Submit Enhancement"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+  );
 }
-
