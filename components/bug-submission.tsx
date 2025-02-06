@@ -65,7 +65,37 @@ export function BugSubmission({ bugNumber }: { bugNumber: number }) {
     setLoading(true);
   
     try {
-      // Upload the screenshot to Supabase Storage
+      // ✅ Fetch the logged-in user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("User not found.");
+  
+      console.log("Logged-in User Email:", user.email); // ✅ Debugging
+  
+      // ✅ Fetch the user's real name from the teams table
+      const { data: teamData, error: teamError } = await supabase
+        .from("teams")
+        .select("teacherName, teacherEmail, teamMember1Name, teamMember1ParentEmail, teamMember2Name, teamMember2ParentEmail, teamMember3Name, teamMember3ParentEmail")
+        .eq("teamName", teamName)
+        .single();
+  
+      if (teamError || !teamData) throw new Error("Failed to fetch team data.");
+  
+      console.log("Fetched Team Data:", teamData); // ✅ Debugging
+  
+      let authorName = "Unknown";
+      if (teamData.teacherEmail === user.email) {
+        authorName = teamData.teacherName;
+      } else if (teamData.teamMember1ParentEmail === user.email) {
+        authorName = teamData.teamMember1Name;
+      } else if (teamData.teamMember2ParentEmail === user.email) {
+        authorName = teamData.teamMember2Name;
+      } else if (teamData.teamMember3ParentEmail === user.email) {
+        authorName = teamData.teamMember3Name;
+      }
+  
+      console.log("Determined Author Name:", authorName); // ✅ Debugging
+  
+      // ✅ Upload the screenshot to Supabase Storage
       const filePath = `bug-screenshots/${Date.now()}-${screenshot.name}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("bug-screenshots")
@@ -73,18 +103,18 @@ export function BugSubmission({ bugNumber }: { bugNumber: number }) {
   
       if (uploadError) throw new Error("Failed to upload screenshot.");
   
-      // Get the public URL of the uploaded image
+      // ✅ Get the public URL of the uploaded image
       const { data: publicURLData } = supabase.storage
         .from("bug-screenshots")
         .getPublicUrl(filePath);
   
       const screenshotUrl = publicURLData.publicUrl;
   
-      // Insert into the bugs table
+      // ✅ Insert into the bugs table with real author name
       const { error: insertError } = await supabase.from("bugs").insert([
         {
           "teamName": teamName,
-          "author": (await supabase.auth.getUser()).data.user?.email,
+          "author": authorName, // ✅ Store real name instead of email
           "bug_number": bugNumber,
           "description": method,
           "timestamp": new Date().toISOString(),
@@ -94,29 +124,28 @@ export function BugSubmission({ bugNumber }: { bugNumber: number }) {
   
       if (insertError) throw new Error("Failed to submit bug fix.");
   
-      // ✅ Show Success Toast
       toast({
         title: "Submission Successful",
         description: "Your bug fix has been submitted for review.",
       });
   
-      // ✅ Reset Form Fields
       setScreenshot(null);
       setMethod("");
   
-      // ✅ Reset File Input (Important!)
       const fileInput = document.getElementById("screenshot") as HTMLInputElement;
       if (fileInput) {
         fileInput.value = "";
       }
   
     } catch (error: any) {
+      console.error("Submission Error:", error); // ✅ Debugging
       toast({ title: "Error", description: error.message });
     } finally {
       setLoading(false);
     }
   };
   
+
   return (
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
