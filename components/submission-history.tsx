@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import { Eye, Trash2 } from "lucide-react";
 
 interface Submission {
   id: string;
@@ -20,6 +21,8 @@ export function SubmissionHistory() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
+  const [deleteSubmissionId, setDeleteSubmissionId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [teamName, setTeamName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,7 +44,7 @@ export function SubmissionHistory() {
         console.error("Could not find the user's team:", teamError);
       } else {
         setTeamName(teamData.teamName);
-        fetchSubmissions(teamData.teamName); // Fetch submissions only for this team
+        fetchSubmissions(teamData.teamName);
       }
     };
 
@@ -53,13 +56,27 @@ export function SubmissionHistory() {
     const { data, error } = await supabase
       .from("submissions")
       .select("id, teamName, author, submission_type, timestamp, file_url")
-      .eq("teamName", userTeam) // ✅ Only fetch submissions from the user's team
+      .eq("teamName", userTeam)
       .order("timestamp", { ascending: false });
 
     if (error) console.error("Error fetching submissions:", error);
     else setSubmissions(data || []);
 
     setLoading(false);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteSubmissionId) return;
+
+    setDeleteLoading(true);
+    const { error } = await supabase.from("submissions").delete().eq("id", deleteSubmissionId);
+    if (error) {
+      console.error("Error deleting submission:", error);
+    } else {
+      setSubmissions(submissions.filter((submission) => submission.id !== deleteSubmissionId));
+      setDeleteSubmissionId(null);
+    }
+    setDeleteLoading(false);
   };
 
   return (
@@ -88,9 +105,18 @@ export function SubmissionHistory() {
                   </TableCell>
                   <TableCell>{submission.teamName}</TableCell>
                   <TableCell>{submission.author}</TableCell>
-                  <TableCell>{format(new Date(submission.timestamp), "PPpp")}</TableCell>
-                  <TableCell>
-                    <Button size="sm" onClick={() => setSelectedSubmission(submission)}>View Details</Button>
+                  <TableCell>{format(new Date(submission.timestamp).toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }), "PPpp")
+                }</TableCell>
+                  <TableCell className="flex gap-2">
+                    {/* ✅ View Details Icon */}
+                    <Button size="icon" variant="ghost" onClick={() => setSelectedSubmission(submission)}>
+                      <Eye className="h-5 w-5 text-blue-500" />
+                    </Button>
+
+                    {/* ✅ Delete Icon */}
+                    <Button size="icon" variant="ghost" onClick={() => setDeleteSubmissionId(submission.id)}>
+                      <Trash2 className="h-5 w-5 text-red-500" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -99,7 +125,7 @@ export function SubmissionHistory() {
         </div>
       )}
 
-      {/* ✅ Dialog for Submission Details */}
+      {/* ✅ Dialog for Viewing Details */}
       <Dialog open={!!selectedSubmission} onOpenChange={() => setSelectedSubmission(null)}>
         {selectedSubmission && (
           <DialogContent>
@@ -133,6 +159,22 @@ export function SubmissionHistory() {
             )}
           </DialogContent>
         )}
+      </Dialog>
+
+      {/* ✅ Confirmation Dialog for Deletion */}
+      <Dialog open={!!deleteSubmissionId} onOpenChange={() => setDeleteSubmissionId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+          </DialogHeader>
+          <p>Are you sure you want to delete this project submission? This action cannot be undone.</p>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteSubmissionId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
+              {deleteLoading ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

@@ -122,7 +122,7 @@ export function EnhancementSubmission() {
             author: authorName, // ✅ Store real name instead of email
             enhancement_type: enhancementType,
             description: method,
-            timestamp: new Date().toISOString(),
+            timestamp: new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
             screenshot_url: screenshotUrl,
           },
         ]);

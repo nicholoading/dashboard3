@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import { Eye, Trash2 } from "lucide-react";
 
 interface BugSubmission {
   id: string;
@@ -22,6 +23,8 @@ export function BugSubmissionHistory() {
   const [loading, setLoading] = useState(true);
   const [selectedBug, setSelectedBug] = useState<BugSubmission | null>(null);
   const [teamName, setTeamName] = useState<string | null>(null);
+  const [deleteBugId, setDeleteBugId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     const fetchUserTeam = async () => {
@@ -63,6 +66,20 @@ export function BugSubmissionHistory() {
     setLoading(false);
   };
 
+  const handleDelete = async () => {
+    if (!deleteBugId) return;
+
+    setDeleteLoading(true);
+    const { error } = await supabase.from("bugs").delete().eq("id", deleteBugId);
+    if (error) {
+      console.error("Error deleting submission:", error);
+    } else {
+      setSubmissions(submissions.filter((bug) => bug.id !== deleteBugId)); // ✅ Remove from UI
+      setDeleteBugId(null);
+    }
+    setDeleteLoading(false);
+  };
+
   return (
     <div className="space-y-4">
       {loading ? (
@@ -87,9 +104,18 @@ export function BugSubmissionHistory() {
                   <TableCell>#{submission.bug_number}</TableCell>
                   <TableCell>{submission.teamName}</TableCell>
                   <TableCell>{submission.author}</TableCell>
-                  <TableCell>{format(new Date(submission.timestamp), "PPpp")}</TableCell>
-                  <TableCell>
-                    <Button size="sm" onClick={() => setSelectedBug(submission)}>View Details</Button>
+                  <TableCell>{format(new Date(submission.timestamp).toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }), "PPpp")
+                }</TableCell>
+                  <TableCell className="flex gap-2">
+                    {/* ✅ View Details Icon */}
+                    <Button size="icon" variant="ghost" onClick={() => setSelectedBug(submission)}>
+                      <Eye className="h-5 w-5 text-blue-500" />
+                    </Button>
+
+                    {/* ✅ Delete Icon */}
+                    <Button size="icon" variant="ghost" onClick={() => setDeleteBugId(submission.id)}>
+                      <Trash2 className="h-5 w-5 text-red-500" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -98,7 +124,7 @@ export function BugSubmissionHistory() {
         </div>
       )}
 
-      {/* ✅ Dialog for Bug Details */}
+      {/* ✅ Dialog for Viewing Details */}
       <Dialog open={!!selectedBug} onOpenChange={() => setSelectedBug(null)}>
         {selectedBug && (
           <DialogContent>
@@ -116,6 +142,22 @@ export function BugSubmissionHistory() {
             )}
           </DialogContent>
         )}
+      </Dialog>
+
+      {/* ✅ Confirmation Dialog for Deletion */}
+      <Dialog open={!!deleteBugId} onOpenChange={() => setDeleteBugId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+          </DialogHeader>
+          <p>Are you sure you want to delete this bug submission? This action cannot be undone.</p>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteBugId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteLoading}>
+              {deleteLoading ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );

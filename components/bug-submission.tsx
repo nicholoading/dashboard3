@@ -117,7 +117,7 @@ export function BugSubmission({ bugNumber }: { bugNumber: number }) {
           "author": authorName, // ✅ Store real name instead of email
           "bug_number": bugNumber,
           "description": method,
-          "timestamp": new Date().toISOString(),
+          "timestamp": new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
           "screenshot_url": screenshotUrl,
         }
       ]);

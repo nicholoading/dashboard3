@@ -102,7 +102,7 @@ export function ProjectSubmission() {
           "teamName": teamName,
           "author": authorName, // ✅ Store real name instead of email
           "submission_type": submissionType,
-          "timestamp": new Date().toISOString(),
+          "timestamp": new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
           "file_url": fileUrl,
         }
       ]);
