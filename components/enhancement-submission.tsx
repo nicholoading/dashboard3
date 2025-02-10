@@ -19,9 +19,8 @@ import Image from "next/image";
 export function EnhancementSubmission() {
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [method, setMethod] = useState("");
-  const [enhancementType, setEnhancementType] = useState<"basic" | "advanced">(
-    "basic"
-  );
+  const [justification, setJustification] = useState(""); // ✅ Justification for advanced
+  const [enhancementType, setEnhancementType] = useState<"basic" | "advanced">("basic");
   const [teamName, setTeamName] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -29,16 +28,12 @@ export function EnhancementSubmission() {
   // Fetch the logged-in user's team name
   useEffect(() => {
     const fetchUserTeam = async () => {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
+      const { data: { user }, error } = await supabase.auth.getUser();
       if (error || !user) {
         toast({ title: "Error", description: "Could not fetch user data." });
         return;
       }
 
-      // Query the teams table to get the teamName for either the teacher or students
       const { data: teamData, error: teamError } = await supabase
         .from("teams")
         .select("teamName")
@@ -59,27 +54,20 @@ export function EnhancementSubmission() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!screenshot || !method || !teamName) {
-      toast({ title: "Error", description: "All fields are required." });
+    if (!screenshot || !method || !teamName || (enhancementType === "advanced" && !justification)) {
+      toast({ title: "Error", description: "All required fields must be filled." });
       return;
     }
 
     setLoading(true);
 
     try {
-      // ✅ Fetch the logged-in user
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error("User not found.");
 
-      // ✅ Fetch the user's real name from the teams table
       const { data: teamData, error: teamError } = await supabase
         .from("teams")
-        .select(
-          "teacherName, teacherEmail, teamMember1Name, teamMember1ParentEmail, teamMember2Name, teamMember2ParentEmail, teamMember3Name, teamMember3ParentEmail"
-        )
+        .select("teacherName, teacherEmail, teamMember1Name, teamMember1ParentEmail, teamMember2Name, teamMember2ParentEmail, teamMember3Name, teamMember3ParentEmail")
         .eq("teamName", teamName)
         .single();
 
@@ -97,31 +85,29 @@ export function EnhancementSubmission() {
       }
 
       // ✅ Upload the screenshot to Supabase Storage
-      const filePath = `enhancement-screenshots/${Date.now()}-${
-        screenshot.name
-      }`;
+      const filePath = `enhancement-screenshots/${Date.now()}-${screenshot.name}`;
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("enhancement-screenshots")
         .upload(filePath, screenshot);
 
       if (uploadError) throw new Error("Failed to upload screenshot.");
 
-      // ✅ Get the public URL of the uploaded image
       const { data: publicURLData } = supabase.storage
         .from("enhancement-screenshots")
         .getPublicUrl(filePath);
 
       const screenshotUrl = publicURLData.publicUrl;
 
-      // ✅ Insert into the enhancements table with real author name
+      // ✅ Insert into the enhancements table
       const { error: insertError } = await supabase
         .from("enhancements")
         .insert([
           {
             teamName: teamName,
-            author: authorName, // ✅ Store real name instead of email
+            author: authorName,
             enhancement_type: enhancementType,
             description: method,
+            justification: enhancementType === "advanced" ? justification : null, // ✅ Only add justification for advanced
             timestamp: new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" }),
             screenshot_url: screenshotUrl,
           },
@@ -136,10 +122,9 @@ export function EnhancementSubmission() {
 
       setScreenshot(null);
       setMethod("");
+      setJustification(""); // ✅ Reset justification
 
-      const fileInput = document.getElementById(
-        "screenshot"
-      ) as HTMLInputElement;
+      const fileInput = document.getElementById("screenshot") as HTMLInputElement;
       if (fileInput) {
         fileInput.value = "";
       }
@@ -153,9 +138,7 @@ export function EnhancementSubmission() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">
-          Submit Your Enhancement
-        </CardTitle>
+        <CardTitle className="text-xl font-semibold">Submit Your Enhancement</CardTitle>
         <CardDescription>
           Upload your code and describe your method
         </CardDescription>
@@ -167,9 +150,7 @@ export function EnhancementSubmission() {
             <select
               id="enhancementType"
               value={enhancementType}
-              onChange={(e) =>
-                setEnhancementType(e.target.value as "basic" | "advanced")
-              }
+              onChange={(e) => setEnhancementType(e.target.value as "basic" | "advanced")}
               className="w-full p-2 border rounded"
               required
             >
@@ -188,7 +169,7 @@ export function EnhancementSubmission() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="method">Fix Method Description</Label>
+            <Label htmlFor="method">Description</Label>
             <Textarea
               id="method"
               placeholder="Describe your enhancement..."
@@ -197,6 +178,19 @@ export function EnhancementSubmission() {
               required
             />
           </div>
+          {/* ✅ Show Justification Field Only for Advanced Enhancements */}
+          {enhancementType === "advanced" && (
+            <div className="space-y-2">
+              <Label htmlFor="justification">Justification</Label>
+              <Textarea
+                id="justification"
+                placeholder="Explain why this enhancement is needed..."
+                value={justification}
+                onChange={(e) => setJustification(e.target.value)}
+                required={enhancementType === "advanced"}
+              />
+            </div>
+          )}
           <Button type="submit" disabled={loading}>
             {loading ? "Submitting..." : "Submit Enhancement"}
           </Button>
